@@ -1,88 +1,183 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { BillData, OcrResponse } from "@/app/lib/bill";
+import type { BillData, BillItem, OcrResponse } from "@/app/lib/bill";
 
 const ACCEPT = ".pdf,.jpg,.jpeg,.png,.webp,.txt";
 
-function Field({ label, value }: { label: string; value: string | number | null }) {
-  const empty = value === null || value === "";
+type Value = string | number | boolean | null;
+
+function display(value: Value): string | null {
+  if (value === null || value === "") return null;
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+function Field({ label, value, wide }: { label: string; value: Value; wide?: boolean }) {
+  const text = display(value);
   return (
-    <div className="field">
+    <div className="field" style={wide ? { gridColumn: "1 / -1" } : undefined}>
       <div className="label">{label}</div>
-      <div className={`value ${empty ? "null" : ""}`}>{empty ? "null" : value}</div>
+      <div className={`value ${text === null ? "null" : ""}`}>{text ?? "null"}</div>
     </div>
   );
 }
 
-function money(n: number | null, currency: string | null): string | null {
-  if (n === null) return null;
-  return currency ? `${currency} ${n.toLocaleString()}` : n.toLocaleString();
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="card">
+      <h2>{title}</h2>
+      <div className="fields">{children}</div>
+    </div>
+  );
+}
+
+// Columns for the items table: [header, key, right-aligned?]
+const ITEM_COLUMNS: [string, keyof BillItem, boolean][] = [
+  ["Description", "description", false],
+  ["HSN/SAC", "hsn_sac", false],
+  ["Qty", "quantity", true],
+  ["UoM", "uom", false],
+  ["Unit price", "unit_price", true],
+  ["Discount", "discount", true],
+  ["Taxable", "taxable_value", true],
+  ["GST %", "gst_rate", true],
+  ["CGST %", "cgst_rate", true],
+  ["CGST", "cgst_amount", true],
+  ["SGST %", "sgst_rate", true],
+  ["SGST", "sgst_amount", true],
+  ["IGST %", "igst_rate", true],
+  ["IGST", "igst_amount", true],
+  ["Cess %", "cess_rate", true],
+  ["Cess", "cess_amount", true],
+  ["Line total", "amount", true],
+];
+
+function ItemsTable({ items }: { items: BillItem[] }) {
+  if (items.length === 0) {
+    return <div className="field"><div className="value null">No items found</div></div>;
+  }
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ whiteSpace: "nowrap" }}>
+        <thead>
+          <tr>
+            <th>#</th>
+            {ITEM_COLUMNS.map(([label, , right]) => (
+              <th key={label} className={right ? "num" : ""}>{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={i}>
+              <td>{i + 1}</td>
+              {ITEM_COLUMNS.map(([label, key, right]) => {
+                const text = display(it[key]);
+                return (
+                  <td
+                    key={label}
+                    className={right ? "num" : ""}
+                    style={text === null ? { color: "#9ca3af", fontStyle: "italic" } : undefined}
+                  >
+                    {text ?? "null"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function BillResult({ result }: { result: OcrResponse }) {
   const [tab, setTab] = useState<"json" | "text">("json");
   const d: BillData = result.data;
+  const t = d.totals;
 
   return (
     <>
-      <div className="card">
-        <h2>Extracted bill</h2>
-        <div className="fields">
-          <Field label="Vendor" value={d.vendor} />
-          <Field label="Invoice number" value={d.invoice_number} />
-          <Field label="Date" value={d.date} />
-          <Field label="Currency" value={d.currency} />
-          <Field label="Payment method" value={d.payment_method} />
-        </div>
-      </div>
+      <Section title="Invoice">
+        <Field label="Invoice number" value={d.invoice.number} />
+        <Field label="Invoice date" value={d.invoice.date} />
+        <Field label="Invoice type" value={d.invoice.type} />
+        <Field label="PO number" value={d.invoice.po_number} />
+        <Field label="PO date" value={d.invoice.po_date} />
+        <Field label="Reverse charge (RCM)" value={d.invoice.reverse_charge} />
+        <Field label="Notes / remarks" value={d.invoice.notes} wide />
+      </Section>
+
+      <Section title="Supplier / Vendor">
+        <Field label="Name" value={d.supplier.name} />
+        <Field label="GSTIN" value={d.supplier.gstin} />
+        <Field label="UIN" value={d.supplier.uin} />
+        <Field label="State" value={d.supplier.state} />
+        <Field label="State code" value={d.supplier.state_code} />
+        <Field label="Address" value={d.supplier.address} wide />
+      </Section>
+
+      <Section title="Buyer / Recipient">
+        <Field label="Name" value={d.buyer.name} />
+        <Field label="GSTIN" value={d.buyer.gstin} />
+        <Field label="UIN" value={d.buyer.uin} />
+        <Field label="State" value={d.buyer.state} />
+        <Field label="State code" value={d.buyer.state_code} />
+        <Field label="Address" value={d.buyer.address} wide />
+      </Section>
+
+      <Section title="Place of supply">
+        <Field label="Place of supply" value={d.place_of_supply.name} />
+        <Field label="State code" value={d.place_of_supply.state_code} />
+      </Section>
+
+      <Section title="Payment">
+        <Field label="Payment method" value={d.payment.method} />
+        <Field label="Payment terms" value={d.payment.terms} />
+        <Field label="Due date" value={d.payment.due_date} />
+        <Field label="Bank account number" value={d.payment.bank_account_number} />
+        <Field label="IFSC" value={d.payment.ifsc} />
+        <Field label="UPI ID" value={d.payment.upi_id} />
+      </Section>
 
       <div className="card">
         <h2>Items</h2>
-        {d.items.length === 0 ? (
-          <div className="field"><div className="value null">No items found</div></div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Description</th>
-                  <th className="num">Qty</th>
-                  <th className="num">Unit price</th>
-                  <th className="num">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.items.map((item, i) => (
-                  <tr key={i}>
-                    <td>{item.description ?? "null"}</td>
-                    <td className="num">{item.quantity ?? "null"}</td>
-                    <td className="num">{item.unit_price ?? "null"}</td>
-                    <td className="num">{item.amount ?? "null"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <ItemsTable items={d.items} />
       </div>
 
       <div className="card">
         <h2>Totals</h2>
         <div className="fields">
-          <Field label="Subtotal" value={d.subtotal} />
-          <Field label="CGST" value={d.cgst} />
-          <Field label="SGST" value={d.sgst} />
-          <Field label="IGST" value={d.igst} />
-          <Field label="GST" value={d.gst} />
+          <Field label="Subtotal" value={t.subtotal} />
+          <Field label="Total discount" value={t.total_discount} />
+          <Field label="Total taxable value" value={t.total_taxable_value} />
+          <Field label="CGST" value={t.cgst} />
+          <Field label="SGST" value={t.sgst} />
+          <Field label="IGST" value={t.igst} />
+          <Field label="Cess" value={t.cess} />
+          <Field label="Total GST / tax" value={t.total_tax} />
+          <Field label="Round-off" value={t.round_off} />
+          <Field label="Currency" value={t.currency} />
         </div>
         <div style={{ marginTop: 18 }}>
-          <div className="field">
-            <div className="label">Grand total</div>
+          <div className="field"><div className="label">Grand total</div></div>
+          <div className="total">
+            {t.grand_total === null ? (
+              <span className="value null">null</span>
+            ) : (
+              `${t.currency ? t.currency + " " : ""}${t.grand_total.toLocaleString()}`
+            )}
           </div>
-          <div className="total">{money(d.grand_total, d.currency) ?? <span className="value null">null</span>}</div>
         </div>
       </div>
+
+      <Section title="E-invoice">
+        <Field label="IRN" value={d.e_invoice.irn} wide />
+        <Field label="Acknowledgement number" value={d.e_invoice.ack_number} />
+        <Field label="Acknowledgement date" value={d.e_invoice.ack_date} />
+        <Field label="QR code data" value={d.e_invoice.qr_code_data} wide />
+      </Section>
 
       <div className="card">
         <div className="tabs">
